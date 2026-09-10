@@ -42,11 +42,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meme.finder.R
 import com.meme.finder.domain.model.ImageItem
+import com.meme.finder.ui.component.clickableNavigate
 import com.meme.finder.util.PermissionUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen(vm: GalleryViewModel = hiltViewModel()) {
+fun GalleryScreen(
+    vm: GalleryViewModel = hiltViewModel(),
+    onOpenImage: (Long) -> Unit = {},
+) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val hasPermission = PermissionUtil.hasImageReadPermission(context)
@@ -74,7 +78,7 @@ fun GalleryScreen(vm: GalleryViewModel = hiltViewModel()) {
             }
             state.isLoading && state.images.isEmpty() -> LoadingState()
             state.images.isEmpty() -> EmptyGallery(onScan = { vm.rescan() })
-            else -> ImageGrid(state.images)
+            else -> ImageGrid(state.images, onOpenImage = onOpenImage)
         }
         state.error?.let { msg ->
             Box(
@@ -125,7 +129,7 @@ private fun EmptyGallery(onScan: () -> Unit) {
 }
 
 @Composable
-private fun ImageGrid(items: List<ImageItem>) {
+private fun ImageGrid(items: List<ImageItem>, onOpenImage: (Long) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(120.dp),
         contentPadding = PaddingValues(4.dp),
@@ -133,17 +137,18 @@ private fun ImageGrid(items: List<ImageItem>) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(items, key = { it.id }) { item -> ImageCell(item) }
+        items(items, key = { it.id }) { item -> ImageCell(item, onOpenImage) }
     }
 }
 
 @Composable
-private fun ImageCell(item: ImageItem) {
+private fun ImageCell(item: ImageItem, onOpenImage: (Long) -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(8.dp))
+            .clickableNavigate { onOpenImage(item.id) },
     ) {
         AsyncImage(
             model = item.uri,
