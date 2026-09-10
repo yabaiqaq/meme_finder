@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -14,16 +16,33 @@ android {
         applicationId = "com.meme.finder"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
+    // Release 签名从 local.properties 读取，keystore 不入库
+    val localProps = Properties()
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { localProps.load(it) }
+    val storeFilePath = localProps.getProperty("RELEASE_STORE_FILE") ?: ""
+    signingConfigs {
+        create("release") {
+            storeFile = if (storeFilePath.isNotEmpty()) file(storeFilePath) else null
+            storePassword = localProps.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+            keyAlias = localProps.getProperty("RELEASE_KEY_ALIAS") ?: ""
+            keyPassword = localProps.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 只有配置了 keystore 才签名，否则出 unsigned apk（CI 友好）
+            if (storeFilePath.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
