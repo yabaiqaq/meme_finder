@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meme.finder.domain.model.ImageItem
+import com.meme.finder.util.OpenExternalUtil
 import com.meme.finder.util.ShareUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +65,9 @@ fun DetailScreen(
                                 if (item.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                 contentDescription = "收藏",
                             )
+                        }
+                        IconButton(onClick = { OpenExternalUtil.open(context, item) }) {
+                            Icon(Icons.Filled.OpenInNew, contentDescription = "用其他应用打开")
                         }
                         IconButton(onClick = { ShareUtil.share(context, item) }) {
                             Icon(Icons.Filled.Share, contentDescription = "分享")
