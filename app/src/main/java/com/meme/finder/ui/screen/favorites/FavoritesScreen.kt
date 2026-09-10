@@ -13,16 +13,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.meme.finder.R
 import com.meme.finder.domain.model.ImageItem
 import com.meme.finder.ui.component.clickableNavigate
@@ -56,8 +59,17 @@ fun FavoritesScreen(
                     .clip(RoundedCornerShape(8.dp))
                     .clickableNavigate { onOpenImage(item.id) },
             ) {
+                val context = LocalContext.current
+                // 显式 size=240，Coil 自动 downsample 到 cell 显示所需像素，不再解码原图
+                val request = remember(item.uri) {
+                    ImageRequest.Builder(context)
+                        .data(item.uri)
+                        .size(240)
+                        .crossfade(true)
+                        .build()
+                }
                 AsyncImage(
-                    model = item.uri,
+                    model = request,
                     contentDescription = item.displayName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
