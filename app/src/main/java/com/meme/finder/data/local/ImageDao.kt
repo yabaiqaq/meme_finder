@@ -92,14 +92,16 @@ interface ImageDao {
     )
 
     /**
-     * FTS 搜索：关键词命中 OCR 文本/文件名。
-     * 用 * 前缀匹配，输入"哈哈"能搜到"哈哈哈"。
+     * 搜索：关键词命中 OCR 文本 / 文件名 / 标签（子串匹配）。
+     * 用 LIKE '%关键词%' —— 中文场景下 FTS 前缀匹配会把"变成豆包了"整成
+     * 一个 token，搜"豆包"前缀不匹配就搜不到；LIKE 子串能命中任意位置。
      */
     @Query("""
-        SELECT i.* FROM images i
-        JOIN images_fts f ON f.rowid = i.id
-        WHERE images_fts MATCH :query
-        ORDER BY i.date_added_sec DESC
+        SELECT * FROM images
+        WHERE ocr_text LIKE '%' || :query || '%'
+           OR display_name LIKE '%' || :query || '%'
+           OR labels LIKE '%' || :query || '%'
+        ORDER BY date_added_sec DESC
     """)
     fun search(query: String): Flow<List<ImageEntity>>
 }

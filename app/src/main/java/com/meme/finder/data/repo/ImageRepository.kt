@@ -28,14 +28,16 @@ class ImageRepository @Inject constructor(
     fun observeFavorites(): Flow<List<ImageItem>> =
         dao.observeFavorites().map { list -> list.map { it.toDomain() } }
 
-    /** FTS 搜索。 */
+    /**
+     * 搜索：关键词命中 OCR 文本 / 文件名 / 标签（子串匹配）。
+     * 不再用 FTS 前缀匹配 —— 中文连续字会被 FTS 分词器整成一个 token，
+     * 搜中间的字（如"豆包"匹配"变成豆包了"）前缀对不上会漏。
+     * LIKE '%关键词%' 能命中任意位置子串，语义正确。
+     */
     fun search(query: String): Flow<List<ImageItem>> {
         val q = query.trim()
         if (q.isEmpty()) return observeAll()
-        // 拼成 FTS4 前缀匹配：用户输入"哈哈" -> "哈哈*"
-        val ftsQuery = q.split(Regex("\\s+"))
-            .joinToString(" ") { "${escapeFts(it)}*" }
-        return dao.search(ftsQuery).map { list -> list.map { it.toDomain() } }
+        return dao.search(q).map { list -> list.map { it.toDomain() } }
     }
 
     /**
@@ -112,10 +114,5 @@ class ImageRepository @Inject constructor(
     /** 标签识别后更新分类。 */
     suspend fun updateType(id: Long, type: com.meme.finder.domain.model.ImageType) {
         dao.updateType(id, type.name)
-    }
-
-    private fun escapeFts(token: String): String {
-        // FTS4 默认不会因中文报错；仅做最简单的清洗，避免特殊操作符
-        return token.replace("\"", " ")
     }
 }
