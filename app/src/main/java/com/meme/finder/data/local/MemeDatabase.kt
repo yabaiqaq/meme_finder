@@ -15,7 +15,7 @@ import javax.inject.Singleton
 @Database(
     entities = [ImageEntity::class, ImageFtsEntity::class],
     version = 1,
-    exportSchema = true,
+    exportSchema = false,
 )
 @TypeConverters(Converters::class)
 abstract class MemeDatabase : RoomDatabase() {
