@@ -34,6 +34,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meme.finder.R
 import com.meme.finder.data.ocr.cloud.CloudOcrProvider
+import com.meme.finder.ui.component.ProgressPanel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,7 +51,9 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("MemeFinder v0.6", style = MaterialTheme.typography.titleLarge)
+        Text("MemeFinder v0.6.3", style = MaterialTheme.typography.titleLarge)
+
+        ProgressPanel(state.progress)
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

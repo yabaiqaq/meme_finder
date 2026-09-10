@@ -2,6 +2,9 @@ package com.meme.finder.ui.screen.gallery
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meme.finder.data.progress.OverallProgress
+import com.meme.finder.data.progress.ProgressTracker
+import com.meme.finder.data.progress.TaskProgress
 import com.meme.finder.data.repo.ImageRepository
 import com.meme.finder.data.scan.ScanStarter
 import com.meme.finder.domain.model.ImageItem
@@ -22,25 +25,28 @@ data class GalleryUiState(
     val error: String? = null,
     val hasScanned: Boolean = false,
     val lastScanCount: Int = 0,
+    val progress: OverallProgress = OverallProgress(),
 )
 
 @HiltViewModel
 class GalleryViewModel @Inject constructor(
     private val repo: ImageRepository,
     private val scanStarter: ScanStarter,
+    private val progressTracker: ProgressTracker,
 ) : ViewModel() {
 
     private val _local = MutableStateFlow(LocalState())
 
     val ui: StateFlow<GalleryUiState> =
-        combine(repo.observeAll(), _local) { images, local ->
+        combine(repo.observeAll(), _local, progressTracker.overall) { images, local, prog ->
             GalleryUiState(
-                isLoading = local.isScanning,
+                isLoading = local.isScanning || prog.anyRunning,
                 images = images,
                 total = images.size,
                 error = local.error,
                 hasScanned = images.isNotEmpty() || local.hasScanned,
                 lastScanCount = local.lastScanCount,
+                progress = prog,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -48,29 +54,27 @@ class GalleryViewModel @Inject constructor(
             initialValue = GalleryUiState(),
         )
 
-    /**
-     * 同步扫描相册：直接调 repo.rescan()（IO 调度），等它写完库，
-     * Room Flow 自动推新数据到 UI；然后再异步触发 OCR + 标签。
-     * 不再用 WorkManager 跑扫描，避免"按了不生效"。
-     */
     fun rescan() {
         if (_local.value.isScanning) return
         _local.update { it.copy(isScanning = true, error = null) }
+        progressTracker.resetScan()
+        progressTracker.setScanProgress(TaskProgress(total = 0, done = 0))
         viewModelScope.launch {
-            runCatching { repo.rescan() }
+            runCatching {
+                repo.rescan { done, total ->
+                    progressTracker.setScanProgress(TaskProgress(total = total, done = done))
+                }
+            }
                 .onSuccess { count ->
                     _local.update {
-                        it.copy(
-                            isScanning = false,
-                            hasScanned = true,
-                            lastScanCount = count,
-                        )
+                        it.copy(isScanning = false, hasScanned = true, lastScanCount = count)
                     }
                     // 扫描完成 -> 后台跑 OCR + 标签（增量，只处理 ocr_processed_at=0 的）
                     scanStarter.startOcrAndLabels()
                 }
                 .onFailure { e ->
                     _local.update { it.copy(isScanning = false, error = e.message ?: "扫描失败") }
+                    progressTracker.resetScan()
                 }
         }
     }

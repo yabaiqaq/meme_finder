@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meme.finder.R
 import com.meme.finder.domain.model.ImageItem
+import com.meme.finder.ui.component.ProgressPanel
 import com.meme.finder.ui.component.clickableNavigate
 import com.meme.finder.util.PermissionUtil
 
@@ -65,26 +66,30 @@ fun GalleryScreen(
         if (hasPermission && !state.hasScanned && !state.isLoading) vm.rescan()
     }
 
-    PullToRefreshBox(
-        isRefreshing = state.isLoading,
-        onRefresh = { vm.rescan() },
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        when {
-            !hasPermission -> {
-                PermissionPrompt(onRequest = {
-                    permissionLauncher.launch(PermissionUtil.imageReadPermission)
-                })
+    Column(Modifier.fillMaxSize()) {
+        ProgressPanel(state.progress)
+
+        PullToRefreshBox(
+            isRefreshing = state.isLoading,
+            onRefresh = { vm.rescan() },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            when {
+                !hasPermission -> {
+                    PermissionPrompt(onRequest = {
+                        permissionLauncher.launch(PermissionUtil.imageReadPermission)
+                    })
+                }
+                state.isLoading && state.images.isEmpty() -> LoadingState()
+                state.images.isEmpty() -> EmptyGallery(onScan = { vm.rescan() })
+                else -> ImageGrid(state.images, onOpenImage = onOpenImage)
             }
-            state.isLoading && state.images.isEmpty() -> LoadingState()
-            state.images.isEmpty() -> EmptyGallery(onScan = { vm.rescan() })
-            else -> ImageGrid(state.images, onOpenImage = onOpenImage)
-        }
-        state.error?.let { msg ->
-            Box(
-                Modifier.fillMaxWidth().padding(16.dp),
-                contentAlignment = Alignment.BottomCenter,
-            ) { Text(msg, color = MaterialTheme.colorScheme.error) }
+            state.error?.let { msg ->
+                Box(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = Alignment.BottomCenter,
+                ) { Text(msg, color = MaterialTheme.colorScheme.error) }
+            }
         }
     }
 }

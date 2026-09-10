@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.meme.finder.data.ocr.cloud.CloudOcrConfig
 import com.meme.finder.data.ocr.cloud.CloudOcrConfigStore
 import com.meme.finder.data.ocr.cloud.CloudOcrProvider
+import com.meme.finder.data.progress.OverallProgress
+import com.meme.finder.data.progress.ProgressTracker
+import com.meme.finder.data.progress.TaskProgress
 import com.meme.finder.data.repo.ImageRepository
 import com.meme.finder.data.scan.ScanStarter
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,6 +29,7 @@ data class SettingsUiState(
     val cloudApiKey: String = "",
     val cloudSecretKey: String = "",
     val cloudConfigured: Boolean = false,
+    val progress: OverallProgress = OverallProgress(),
 )
 
 private data class Stats(val total: Int, val favorites: Int)
@@ -35,6 +39,7 @@ class SettingsViewModel @Inject constructor(
     private val repo: ImageRepository,
     private val scanStarter: ScanStarter,
     private val cloudStore: CloudOcrConfigStore,
+    private val progressTracker: ProgressTracker,
 ) : ViewModel() {
 
     private val _local = MutableStateFlow(LocalState(cloud = cloudStore.load()))
@@ -44,15 +49,16 @@ class SettingsViewModel @Inject constructor(
     }
 
     val ui: StateFlow<SettingsUiState> =
-        statsFlow.combine(_local) { stats, local ->
+        combine(statsFlow, _local, progressTracker.overall) { stats, local, prog ->
             SettingsUiState(
                 total = stats.total,
                 favorites = stats.favorites,
-                isScanning = local.isScanning,
+                isScanning = local.isScanning || prog.anyRunning,
                 cloudProvider = local.cloud.provider,
                 cloudApiKey = local.cloud.apiKey,
                 cloudSecretKey = local.cloud.secretKey,
                 cloudConfigured = cloudStore.isConfigured(),
+                progress = prog,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -81,14 +87,21 @@ class SettingsViewModel @Inject constructor(
     fun rescan() {
         if (_local.value.isScanning) return
         _local.update { it.copy(isScanning = true) }
+        progressTracker.resetScan()
+        progressTracker.setScanProgress(TaskProgress(total = 0, done = 0))
         viewModelScope.launch {
-            runCatching { repo.rescan() }
+            runCatching {
+                repo.rescan { done, total ->
+                    progressTracker.setScanProgress(TaskProgress(total = total, done = done))
+                }
+            }
                 .onSuccess {
                     _local.update { it.copy(isScanning = false) }
                     scanStarter.startOcrAndLabels()
                 }
                 .onFailure {
                     _local.update { it.copy(isScanning = false) }
+                    progressTracker.resetScan()
                 }
         }
     }

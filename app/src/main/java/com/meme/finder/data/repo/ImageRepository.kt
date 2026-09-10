@@ -47,11 +47,15 @@ class ImageRepository @Inject constructor(
      * 3. 已有图只刷新 media 元数据（uri/尺寸/文件名/分类），
      *    保留 ocr_text/labels/is_favorite/ocr_processed_at/label_processed_at
      *
-     * 这样新增图片能进库、已处理过的 OCR 不会丢、收藏不会被清。
+     * [onProgress] 用于实时推送进度 (done, total)，UI 据此显示进度条。
      */
-    suspend fun rescan(): Int = withContext(Dispatchers.IO) {
+    suspend fun rescan(
+        onProgress: (suspend (done: Int, total: Int) -> Unit)? = null,
+    ): Int = withContext(Dispatchers.IO) {
         val scanned = mediaStoreSource.scanImages()
         if (scanned.isEmpty()) return@withContext 0
+        val total = scanned.size
+        var done = 0
 
         val entities = scanned.map { ImageEntity.fromDomain(it) }
         val existingIds = dao.getAllIds().toSet()
@@ -61,9 +65,12 @@ class ImageRepository @Inject constructor(
 
         // 新行直接插入（IGNORE 兜底，防并发）
         if (newOnes.isNotEmpty()) dao.insertNew(newOnes)
+        done += newOnes.size
+        onProgress?.invoke(done, total)
 
         // 已有行只刷 media 元数据，保留 OCR/labels/favorite
-        for (e in existingOnes) {
+        // 每 50 条刷一次进度，避免过度回调
+        for ((idx, e) in existingOnes.withIndex()) {
             dao.updateMediaMeta(
                 id = e.id,
                 uri = e.uri,
@@ -78,7 +85,10 @@ class ImageRepository @Inject constructor(
                 bucketDisplayName = e.bucketDisplayName,
                 type = e.type.name,
             )
+            done++
+            if (idx % 50 == 0) onProgress?.invoke(done, total)
         }
+        onProgress?.invoke(done, total)
         scanned.size
     }
 
