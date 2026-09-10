@@ -54,16 +54,16 @@ fun GalleryScreen(vm: GalleryViewModel = hiltViewModel()) {
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) vm.scan()
+        if (granted) vm.rescan()
     }
 
     LaunchedEffect(hasPermission) {
-        if (hasPermission && !state.hasScanned && !state.isLoading) vm.scan()
+        if (hasPermission && !state.hasScanned && !state.isLoading) vm.rescan()
     }
 
     PullToRefreshBox(
         isRefreshing = state.isLoading,
-        onRefresh = { vm.scan() },
+        onRefresh = { vm.rescan() },
         modifier = Modifier.fillMaxSize(),
     ) {
         when {
@@ -73,7 +73,7 @@ fun GalleryScreen(vm: GalleryViewModel = hiltViewModel()) {
                 })
             }
             state.isLoading && state.images.isEmpty() -> LoadingState()
-            state.images.isEmpty() -> EmptyGallery(onScan = { vm.scan() })
+            state.images.isEmpty() -> EmptyGallery(onScan = { vm.rescan() })
             else -> ImageGrid(state.images)
         }
         state.error?.let { msg ->
