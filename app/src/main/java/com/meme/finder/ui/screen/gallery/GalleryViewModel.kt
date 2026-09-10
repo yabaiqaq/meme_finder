@@ -19,9 +19,9 @@ data class GalleryUiState(
     val isLoading: Boolean = false,
     val images: List<ImageItem> = emptyList(),
     val total: Int = 0,
-    val ocrPending: Int = 0,
     val error: String? = null,
     val hasScanned: Boolean = false,
+    val lastScanCount: Int = 0,
 )
 
 @HiltViewModel
@@ -38,9 +38,9 @@ class GalleryViewModel @Inject constructor(
                 isLoading = local.isScanning,
                 images = images,
                 total = images.size,
-                ocrPending = local.ocrPendingHint,
                 error = local.error,
                 hasScanned = images.isNotEmpty() || local.hasScanned,
+                lastScanCount = local.lastScanCount,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -48,25 +48,37 @@ class GalleryViewModel @Inject constructor(
             initialValue = GalleryUiState(),
         )
 
+    /**
+     * 同步扫描相册：直接调 repo.rescan()（IO 调度），等它写完库，
+     * Room Flow 自动推新数据到 UI；然后再异步触发 OCR + 标签。
+     * 不再用 WorkManager 跑扫描，避免"按了不生效"。
+     */
     fun rescan() {
         if (_local.value.isScanning) return
         _local.update { it.copy(isScanning = true, error = null) }
-        scanStarter.startScanWithOcr()
-        // WorkManager 在后台异步跑；UI 端给出乐观反馈，几秒后兜底关闭 loading
         viewModelScope.launch {
-            kotlinx.coroutines.delay(2_000)
-            _local.update { it.copy(isScanning = false, hasScanned = true) }
+            runCatching { repo.rescan() }
+                .onSuccess { count ->
+                    _local.update {
+                        it.copy(
+                            isScanning = false,
+                            hasScanned = true,
+                            lastScanCount = count,
+                        )
+                    }
+                    // 扫描完成 -> 后台跑 OCR + 标签（增量，只处理 ocr_processed_at=0 的）
+                    scanStarter.startOcrAndLabels()
+                }
+                .onFailure { e ->
+                    _local.update { it.copy(isScanning = false, error = e.message ?: "扫描失败") }
+                }
         }
-    }
-
-    fun forceOcrOnly() {
-        scanStarter.startOcrOnly()
     }
 
     private data class LocalState(
         val isScanning: Boolean = false,
         val hasScanned: Boolean = false,
-        val ocrPendingHint: Int = 0,
+        val lastScanCount: Int = 0,
         val error: String? = null,
     )
 }

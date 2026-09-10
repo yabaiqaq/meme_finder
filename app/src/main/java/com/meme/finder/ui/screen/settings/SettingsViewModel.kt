@@ -2,6 +2,7 @@ package com.meme.finder.ui.screen.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meme.finder.data.ocr.cloud.CloudOcrConfig
 import com.meme.finder.data.ocr.cloud.CloudOcrConfigStore
 import com.meme.finder.data.ocr.cloud.CloudOcrProvider
 import com.meme.finder.data.repo.ImageRepository
@@ -14,16 +15,20 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class SettingsUiState(
     val total: Int = 0,
     val favorites: Int = 0,
+    val isScanning: Boolean = false,
     val cloudProvider: CloudOcrProvider = CloudOcrProvider.NONE,
     val cloudApiKey: String = "",
     val cloudSecretKey: String = "",
     val cloudConfigured: Boolean = false,
 )
+
+private data class Stats(val total: Int, val favorites: Int)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -32,45 +37,60 @@ class SettingsViewModel @Inject constructor(
     private val cloudStore: CloudOcrConfigStore,
 ) : ViewModel() {
 
-    private val _local = MutableStateFlow(cloudStore.load())
+    private val _local = MutableStateFlow(LocalState(cloud = cloudStore.load()))
 
-    val ui: StateFlow<SettingsUiState> = combine(
-        repo.observeAll().map { all -> all.size to all.count { it.isFavorite } },
-        _local,
-    ) { (total, favorites), cloud ->
-        SettingsUiState(
-            total = total,
-            favorites = favorites,
-            cloudProvider = cloud.provider,
-            cloudApiKey = cloud.apiKey,
-            cloudSecretKey = cloud.secretKey,
-            cloudConfigured = cloudStore.isConfigured(),
+    private val statsFlow = repo.observeAll().map { all ->
+        Stats(all.size, all.count { it.isFavorite })
+    }
+
+    val ui: StateFlow<SettingsUiState> =
+        statsFlow.combine(_local) { stats, local ->
+            SettingsUiState(
+                total = stats.total,
+                favorites = stats.favorites,
+                isScanning = local.isScanning,
+                cloudProvider = local.cloud.provider,
+                cloudApiKey = local.cloud.apiKey,
+                cloudSecretKey = local.cloud.secretKey,
+                cloudConfigured = cloudStore.isConfigured(),
+            )
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = SettingsUiState(),
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = SettingsUiState(),
-    )
 
     fun setProvider(provider: CloudOcrProvider) {
-        _local.update { it.copy(provider = provider) }
-        cloudStore.save(_local.value)
+        _local.update { it.copy(cloud = it.cloud.copy(provider = provider)) }
+        cloudStore.save(_local.value.cloud)
     }
 
     fun setApiKey(key: String) {
-        _local.update { it.copy(apiKey = key) }
+        _local.update { it.copy(cloud = it.cloud.copy(apiKey = key)) }
     }
 
     fun setSecretKey(key: String) {
-        _local.update { it.copy(secretKey = key) }
+        _local.update { it.copy(cloud = it.cloud.copy(secretKey = key)) }
     }
 
     fun saveCloud() {
-        cloudStore.save(_local.value)
+        cloudStore.save(_local.value.cloud)
     }
 
+    /** 同步扫描：直接调 repo.rescan()，等写完库 UI 即刷新，再触发 OCR+标签。 */
     fun rescan() {
-        scanStarter.startScanWithOcr()
+        if (_local.value.isScanning) return
+        _local.update { it.copy(isScanning = true) }
+        viewModelScope.launch {
+            runCatching { repo.rescan() }
+                .onSuccess {
+                    _local.update { it.copy(isScanning = false) }
+                    scanStarter.startOcrAndLabels()
+                }
+                .onFailure {
+                    _local.update { it.copy(isScanning = false) }
+                }
+        }
     }
 
     fun forceOcr() {
@@ -80,4 +100,9 @@ class SettingsViewModel @Inject constructor(
     fun forceLabel() {
         scanStarter.startLabelOnly()
     }
+
+    private data class LocalState(
+        val isScanning: Boolean = false,
+        val cloud: CloudOcrConfig = CloudOcrConfig(),
+    )
 }

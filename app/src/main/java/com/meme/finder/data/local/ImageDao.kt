@@ -11,8 +11,13 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ImageDao {
 
+    /** 全量替换写入（仅用于首次建库/重置，会覆盖 OCR/labels/favorite）。 */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<ImageEntity>)
+
+    /** 仅插入新行，已存在的 id 不动 —— 保留已有 OCR/labels/favorite。 */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertNew(items: List<ImageEntity>): List<Long>
 
     @Update
     suspend fun update(item: ImageEntity)
@@ -22,6 +27,9 @@ interface ImageDao {
 
     @Query("SELECT * FROM images ORDER BY date_added_sec DESC")
     fun observeAll(): Flow<List<ImageEntity>>
+
+    @Query("SELECT id FROM images")
+    suspend fun getAllIds(): List<Long>
 
     @Query("SELECT * FROM images WHERE id = :id")
     suspend fun getById(id: Long): ImageEntity?
@@ -48,7 +56,43 @@ interface ImageDao {
     suspend fun updateType(id: Long, type: String, timestamp: Long = System.currentTimeMillis())
 
     /**
-     * FTS 搜索：关键词命中 OCR 文本/文件名/标签。
+     * 增量更新 media 元数据（uri/尺寸/文件名/分类等），保留 OCR/labels/favorite/处理时间戳。
+     * 仅对已存在的行调用。
+     */
+    @Query("""
+        UPDATE images SET
+            uri = :uri,
+            display_name = :displayName,
+            path = :path,
+            mime_type = :mimeType,
+            width = :width,
+            height = :height,
+            size_bytes = :sizeBytes,
+            date_added_sec = :dateAddedSec,
+            date_taken_ms = :dateTakenMs,
+            bucket_display_name = :bucketDisplayName,
+            type = :type,
+            updated_at = :timestamp
+        WHERE id = :id
+    """)
+    suspend fun updateMediaMeta(
+        id: Long,
+        uri: String,
+        displayName: String,
+        path: String?,
+        mimeType: String,
+        width: Int,
+        height: Int,
+        sizeBytes: Long,
+        dateAddedSec: Long,
+        dateTakenMs: Long?,
+        bucketDisplayName: String?,
+        type: String,
+        timestamp: Long = System.currentTimeMillis(),
+    )
+
+    /**
+     * FTS 搜索：关键词命中 OCR 文本/文件名。
      * 用 * 前缀匹配，输入"哈哈"能搜到"哈哈哈"。
      */
     @Query("""
@@ -58,10 +102,4 @@ interface ImageDao {
         ORDER BY i.date_added_sec DESC
     """)
     fun search(query: String): Flow<List<ImageEntity>>
-
-    @Transaction
-    suspend fun upsertAndRebuildFts(items: List<ImageEntity>) {
-        upsertAll(items)
-        // Room FTS contentEntity 自动维护索引；插入即生效
-    }
 }

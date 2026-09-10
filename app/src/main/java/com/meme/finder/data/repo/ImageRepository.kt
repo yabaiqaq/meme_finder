@@ -4,8 +4,10 @@ import com.meme.finder.data.local.ImageDao
 import com.meme.finder.data.local.ImageEntity
 import com.meme.finder.data.media.MediaStoreSource
 import com.meme.finder.domain.model.ImageItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,25 +39,60 @@ class ImageRepository @Inject constructor(
     }
 
     /**
-     * 扫描相册：从 MediaStore 读出全部图片并 upsert 到 Room。
-     * 已存在的项目 OCR/标签/收藏状态保持不变。
+     * 增量扫描相册：
+     * 1. 从 MediaStore 读出全部图片
+     * 2. 新图 INSERT IGNORE（保留 OCR/labels/favorite 默认空值，交给后续 Worker）
+     * 3. 已有图只刷新 media 元数据（uri/尺寸/文件名/分类），
+     *    保留 ocr_text/labels/is_favorite/ocr_processed_at/label_processed_at
+     *
+     * 这样新增图片能进库、已处理过的 OCR 不会丢、收藏不会被清。
      */
-    suspend fun rescan(): Int {
+    suspend fun rescan(): Int = withContext(Dispatchers.IO) {
         val scanned = mediaStoreSource.scanImages()
-        val existing = scanned.map { ImageEntity.fromDomain(it) }
-        dao.upsertAll(existing)
-        return scanned.size
+        if (scanned.isEmpty()) return@withContext 0
+
+        val entities = scanned.map { ImageEntity.fromDomain(it) }
+        val existingIds = dao.getAllIds().toSet()
+
+        // 拆分：新行 vs 已有行
+        val (newOnes, existingOnes) = entities.partition { it.id !in existingIds }
+
+        // 新行直接插入（IGNORE 兜底，防并发）
+        if (newOnes.isNotEmpty()) dao.insertNew(newOnes)
+
+        // 已有行只刷 media 元数据，保留 OCR/labels/favorite
+        for (e in existingOnes) {
+            dao.updateMediaMeta(
+                id = e.id,
+                uri = e.uri,
+                displayName = e.displayName,
+                path = e.path,
+                mimeType = e.mimeType,
+                width = e.width,
+                height = e.height,
+                sizeBytes = e.sizeBytes,
+                dateAddedSec = e.dateAddedSec,
+                dateTakenMs = e.dateTakenMs,
+                bucketDisplayName = e.bucketDisplayName,
+                type = e.type.name,
+            )
+        }
+        scanned.size
     }
 
-    suspend fun getById(id: Long): ImageItem? = dao.getById(id)?.toDomain()
+    suspend fun getById(id: Long): ImageItem? = withContext(Dispatchers.IO) {
+        dao.getById(id)?.toDomain()
+    }
 
     /** 返回 OCR 待处理列表。 */
-    suspend fun getOcrPending(): List<ImageItem> =
+    suspend fun getOcrPending(): List<ImageItem> = withContext(Dispatchers.IO) {
         dao.getOcrPending().map { it.toDomain() }
+    }
 
-    /** 标签待处理列表（v0.4 用）。 */
-    suspend fun getLabelPending(): List<ImageItem> =
+    /** 标签待处理列表。 */
+    suspend fun getLabelPending(): List<ImageItem> = withContext(Dispatchers.IO) {
         dao.getLabelPending().map { it.toDomain() }
+    }
 
     /** 写回 OCR 结果。 */
     suspend fun setOcrResult(id: Long, text: String) {
