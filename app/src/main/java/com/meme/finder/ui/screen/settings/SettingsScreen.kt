@@ -6,31 +6,51 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meme.finder.R
+import com.meme.finder.data.ocr.cloud.CloudOcrProvider
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
     val state by vm.ui.collectAsStateWithLifecycle()
+    var apiKeyInput by remember(state.cloudApiKey) { mutableStateOf(state.cloudApiKey) }
+    var secretInput by remember(state.cloudSecretKey) { mutableStateOf(state.cloudSecretKey) }
+    var providerMenuExpanded by remember { mutableStateOf(false) }
 
     Column(
-        Modifier.fillMaxSize().padding(16.dp),
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("MemeFinder v0.2", style = MaterialTheme.typography.titleLarge)
+        Text("MemeFinder v0.6", style = MaterialTheme.typography.titleLarge)
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -52,6 +72,73 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = vm::forceLabel, modifier = Modifier.weight(1f)) {
                 Text("补跑标签")
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("云端 OCR（混合策略兜底）", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "端侧 ML Kit 失败或无文字时，自动调用云端。需在百度智能云开通文字识别并填入 API Key/Secret Key。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                ExposedDropdownMenuBox(
+                    expanded = providerMenuExpanded,
+                    onExpandedChange = { providerMenuExpanded = !providerMenuExpanded },
+                ) {
+                    OutlinedTextField(
+                        value = state.cloudProvider.displayName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("服务提供商") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(providerMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    )
+                    DropdownMenu(
+                        expanded = providerMenuExpanded,
+                        onDismissRequest = { providerMenuExpanded = false },
+                    ) {
+                        CloudOcrProvider.entries.forEach { p ->
+                            DropdownMenuItem(
+                                text = { Text(p.displayName) },
+                                onClick = { vm.setProvider(p); providerMenuExpanded = false },
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = apiKeyInput,
+                    onValueChange = { apiKeyInput = it; vm.setApiKey(it) },
+                    label = { Text("API Key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = secretInput,
+                    onValueChange = { secretInput = it; vm.setSecretKey(it) },
+                    label = { Text("Secret Key") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(onClick = vm::saveCloud, modifier = Modifier.weight(1f)) {
+                        Text("保存配置")
+                    }
+                    Text(
+                        if (state.cloudConfigured) "已生效" else "未配置",
+                        modifier = Modifier.weight(1f),
+                        color = if (state.cloudConfigured) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
