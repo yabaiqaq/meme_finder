@@ -44,6 +44,9 @@ interface ImageDao {
     @Query("UPDATE images SET is_favorite = :favorite, updated_at = :timestamp WHERE id = :id")
     suspend fun setFavorite(id: Long, favorite: Boolean, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE images SET type = :type, updated_at = :timestamp WHERE id = :id")
+    suspend fun updateType(id: Long, type: String, timestamp: Long = System.currentTimeMillis())
+
     /**
      * FTS 搜索：关键词命中 OCR 文本/文件名/标签。
      * 用 * 前缀匹配，输入"哈哈"能搜到"哈哈哈"。

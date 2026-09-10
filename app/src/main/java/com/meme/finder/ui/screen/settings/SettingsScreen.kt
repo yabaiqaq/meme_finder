@@ -49,6 +49,11 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 Text("补跑 OCR")
             }
         }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = vm::forceLabel, modifier = Modifier.weight(1f)) {
+                Text("补跑标签")
+            }
+        }
     }
 }
 

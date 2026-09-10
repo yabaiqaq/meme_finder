@@ -42,4 +42,8 @@ class SettingsViewModel @Inject constructor(
     fun forceOcr() {
         scanStarter.startOcrOnly()
     }
+
+    fun forceLabel() {
+        scanStarter.startLabelOnly()
+    }
 }

@@ -72,6 +72,11 @@ class ImageRepository @Inject constructor(
         dao.setFavorite(id, favorite)
     }
 
+    /** 标签识别后更新分类。 */
+    suspend fun updateType(id: Long, type: com.meme.finder.domain.model.ImageType) {
+        dao.updateType(id, type.name)
+    }
+
     private fun escapeFts(token: String): String {
         // FTS4 默认不会因中文报错；仅做最简单的清洗，避免特殊操作符
         return token.replace("\"", " ")
