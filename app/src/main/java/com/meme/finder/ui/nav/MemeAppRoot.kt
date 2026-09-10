@@ -104,10 +104,7 @@ fun MemeNavHost(
             route = Routes.DETAIL,
             arguments = listOf(navArgument("imageId") { type = NavType.StringType }),
         ) {
-            DetailScreen(
-                onBack = { navController.popBackStack() },
-                onShare = { /* v0.5 接入分享 */ },
-            )
+            DetailScreen(onBack = { navController.popBackStack() })
         }
     }
 }

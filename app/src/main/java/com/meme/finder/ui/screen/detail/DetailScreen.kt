@@ -30,20 +30,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.meme.finder.domain.model.ImageItem
+import com.meme.finder.util.ShareUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     vm: DetailViewModel = hiltViewModel(),
     onBack: () -> Unit = {},
-    onShare: (ImageItem) -> Unit = {},
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -62,7 +64,7 @@ fun DetailScreen(
                                 contentDescription = "收藏",
                             )
                         }
-                        IconButton(onClick = { onShare(item) }) {
+                        IconButton(onClick = { ShareUtil.share(context, item) }) {
                             Icon(Icons.Filled.Share, contentDescription = "分享")
                         }
                     }
