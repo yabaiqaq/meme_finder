@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">表情包检索</string>
+    <string name="tab_gallery">相册</string>
+    <string name="tab_search">搜索</string>
+    <string name="tab_favorites">收藏</string>
+    <string name="tab_settings">设置</string>
+    <string name="action_scan">扫描相册</string>
+    <string name="action_share">分享</string>
+    <string name="action_delete">删除</string>
+    <string name="action_favorite">收藏</string>
+    <string name="action_unfavorite">取消收藏</string>
+    <string name="search_hint">输入关键词搜索表情包文字…</string>
+    <string name="empty_gallery">相册还没有扫描，点击下方按钮开始</string>
+    <string name="empty_search">没有匹配的表情包</string>
+    <string name="empty_favorites">还没有收藏的表情包</string>
+    <string name="permission_rationale">需要读取相册权限才能扫描表情包</string>
+    <string name="permission_grant">授予权限</string>
+    <string name="scan_progress">正在扫描: %1$d/%2$d</string>
+    <string name="scan_done">扫描完成，共处理 %1$d 张</string>
+</resources>
