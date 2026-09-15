@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,38 +50,73 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text("MemeFinder v0.6.3", style = MaterialTheme.typography.titleLarge)
-
         ProgressPanel(state.progress)
 
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // 数据统计
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        ) {
+            Column(
+                Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text("数据统计", style = MaterialTheme.typography.titleMedium)
-                HorizontalDivider()
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                 StatRow("已索引图片", "${state.total}")
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                 StatRow("收藏数量", "${state.favorites}")
             }
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = vm::rescan, modifier = Modifier.weight(1f)) {
+        // 操作
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                onClick = vm::rescan,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
+            ) {
                 Text(stringResource(R.string.action_scan))
             }
-            OutlinedButton(onClick = vm::forceOcr, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = vm::forceOcr,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
+            ) {
                 Text("补跑 OCR")
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = vm::forceLabel, modifier = Modifier.weight(1f)) {
-                Text("补跑标签")
-            }
+        OutlinedButton(
+            onClick = vm::forceLabel,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Text("补跑标签")
         }
 
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 云端 OCR
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        ) {
+            Column(
+                Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 Text("云端 OCR（混合策略兜底）", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "端侧 ML Kit 失败或无文字时，自动调用云端。需在百度智能云开通文字识别并填入 API Key/Secret Key。",
@@ -98,6 +135,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                         label = { Text("服务提供商") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(providerMenuExpanded) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(14.dp),
                     )
                     DropdownMenu(
                         expanded = providerMenuExpanded,
@@ -118,6 +156,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                     label = { Text("API Key") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
                 )
                 OutlinedTextField(
                     value = secretInput,
@@ -126,20 +165,26 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
                 )
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Button(onClick = vm::saveCloud, modifier = Modifier.weight(1f)) {
+                    Button(
+                        onClick = vm::saveCloud,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
                         Text("保存配置")
                     }
                     Text(
                         if (state.cloudConfigured) "已生效" else "未配置",
                         modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = if (state.cloudConfigured) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -154,7 +199,7 @@ private fun StatRow(label: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label)
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.titleMedium)
     }
 }

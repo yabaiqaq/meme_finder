@@ -10,21 +10,31 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 private val LightColors = lightColorScheme(
-    primary = Purple40,
+    primary = Indigo40,
     onPrimary = Color.White,
-    secondary = PurpleGrey40,
+    secondary = IndigoGrey40,
+    tertiary = Tertiary40,
     background = LightBackground,
+    onBackground = LightOnSurface,
     surface = LightSurface,
     onSurface = LightOnSurface,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    outline = LightOutline,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Purple80,
+    primary = Indigo80,
     onPrimary = Color(0xFF1B0091),
-    secondary = PurpleGrey80,
+    secondary = IndigoGrey80,
+    tertiary = Tertiary80,
     background = DarkBackground,
+    onBackground = DarkOnSurface,
     surface = DarkSurface,
     onSurface = DarkOnSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = DarkOutline,
 )
 
 val LocalIsDark = staticCompositionLocalOf { false }
