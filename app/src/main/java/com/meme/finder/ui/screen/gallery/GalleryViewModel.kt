@@ -21,6 +21,7 @@ import javax.inject.Inject
 data class GalleryUiState(
     val isLoading: Boolean = false,
     val images: List<ImageItem> = emptyList(),
+    val groups: List<GalleryGroup> = emptyList(),
     val total: Int = 0,
     val error: String? = null,
     val hasScanned: Boolean = false,
@@ -42,6 +43,7 @@ class GalleryViewModel @Inject constructor(
             GalleryUiState(
                 isLoading = local.isScanning || prog.anyRunning,
                 images = images,
+                groups = groupByMonth(images),
                 total = images.size,
                 error = local.error,
                 hasScanned = images.isNotEmpty() || local.hasScanned,
