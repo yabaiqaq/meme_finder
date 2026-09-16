@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -73,6 +75,7 @@ import kotlin.math.roundToInt
  * 5. **isDragging 用 derivedStateOf 过滤**：只在拖动起止边界（true↔false）重组，
  *    拖动过程中 dragRatio 高频变化不触发重组。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FastScroller(
     state: LazyGridState,
@@ -111,29 +114,71 @@ fun FastScroller(
     //   （包括 state.scroll 的 mutate），cancel 信号正确传播，锁正确释放
     // - LaunchedEffect 的 scope 与 composition 绑定，组件销毁时自动取消，无泄漏
     //
-    // 为什么用 state.scroll(MutatePriority.UserInput) 而非 scrollToItem：
-    // - scrollToItem 内部也是 mutate，但优先级默认 Default，会被 grid 惯性滚动/测量阻塞
-    // - UserInput 优先级抢占 grid 自身的滚动锁，立即生效
-    // - scrollBy(deltaPx) 是同步推 delta，立即应用到 scroll position
+    // 关键设计：用 `state.scroll { scrollBy(deltaPx) }` 增量像素滚动，而非
+    // `scrollToItem(targetIndex)`。
     //
-    // 为什么不用 dispatchRawDelta：
-    // - dispatchRawDelta 是 @ExperimentalFoundationApi，API 不稳定
-    // - 按像素推 delta，大量 item 时一次性推几千像素会触发大量 layout 计算，可能掉帧
-    // - scroll {} 走正常的滚动管线，grid 会按可见区域分批 layout，性能更好
+    // 为什么不用 scrollToItem：
+    // - scrollToItem 跳到远 index 时，LazyVerticalGrid 在 Adaptive 列数下估算偏差大，
+    //   需要逐个测量中间 item 来精确对齐目标 index
+    // - 1.8 万张图下修正过程测量上千 item → 主线程长时间阻塞 + 大量临时对象分配
+    //   → ANR/闪退（叠加 OCR 前台服务占内存，更易崩）
+    // - 这是"拖到手柄到下半部分就闪退"的根因：ratio > 0.5 → targetIndex > 9000 →
+    //   远距离跳转触发大量中间测量
+    //
+    // scroll { scrollBy(delta) } 的优势：
+    // - 只把 delta 像素推给滚动管线，grid 只 layout 可见区域 + prefetch，
+    //   不测量中间 item
+    // - 跳转成本 O(可见区) 而非 O(targetIndex)，1.8 万张图也能瞬时跳
+    // - collectLatest 的 cancel 正确传播到 scroll 块，锁正确释放
+    //
+    // 精度：行高用可见行数估算，与实际有偏差，但快速滑动条追求"拖到大概位置"，
+    // 精度差可接受；手柄回弹时 scrollRatio 仍用 firstVisibleItemIndex 精确计算。
     LaunchedEffect(state) {
         snapshotFlow { dragRatio }
             .filter { it >= 0f }
             .collectLatest { ratio ->
-                val total = state.layoutInfo.totalItemsCount
-                if (total <= 1) return@collectLatest
+                val layoutInfo = state.layoutInfo
+                val total = layoutInfo.totalItemsCount
+                val visible = layoutInfo.visibleItemsInfo
+                if (total <= 1 || visible.isEmpty()) return@collectLatest
 
-                val targetIndex = (ratio * (total - 1)).roundToInt().coerceIn(0, total - 1)
-                if (targetIndex == state.firstVisibleItemIndex) return@collectLatest
+                val viewportHeight = layoutInfo.viewportSize.height.toFloat()
+                val viewportWidth = layoutInfo.viewportSize.width
+                if (viewportHeight <= 0f || viewportWidth <= 0) return@collectLatest
 
-                // scrollToItem 内部是 mutate，立即跳（不是平滑滚动），不需要 layout 中间 item
-                // collectLatest 的 cancel 会正确传播到 mutate 内部，锁正确释放
+                // 估算列数：GalleryScreen 用 GridCells.Adaptive(120.dp) + 6dp 横向间距
+                val cellWidthPx = with(density) { 120.dp.toPx() + 6.dp.toPx() }
+                val columns = maxOf(1, (viewportWidth / cellWidthPx).toInt())
+
+                // 估算行高：viewport 高度 / 可见行数
+                val visibleRows = maxOf(1, (visible.size + columns - 1) / columns)
+                val rowHeight = viewportHeight / visibleRows
+
+                val totalRows = (total + columns - 1) / columns
+                val maxScrollPx = maxOf(0f, totalRows * rowHeight - viewportHeight)
+                val targetPx = (ratio * maxScrollPx).coerceIn(0f, maxScrollPx)
+
+                // 当前像素位置：第一个可见 item 的全局行 * 行高 - 其相对 viewport 的偏移
+                // first.offset.y 通常 ≤ 0（往上滚出），所以 currentPx = 已滚动距离
+                val first = visible.first()
+                val firstRow = first.index / columns
+                val currentPx = firstRow * rowHeight - first.offset.y.toFloat()
+
+                val delta = targetPx - currentPx
+                if (abs(delta) < 1f) return@collectLatest
+
+                // 用 dispatchRawDelta 推 delta 像素，而非 scrollToItem(index)。
+                //
+                // 为什么不用 scrollToItem：见上方注释——远距离跳转触发大量中间测量。
+                // dispatchRawDelta 直接把 delta 像素推给滚动管线，grid 只 layout 可见
+                // 区域 + prefetch，不测量中间 item，跳转成本 O(可见区)。
+                //
+                // 为什么不用 scroll { scrollBy(delta) }：
+                // - scroll 扩展函数在该 Compose 版本下 import 路径不稳定
+                // - dispatchRawDelta 是 ScrollableState 成员，直接可用
+                // - 非挂起，同步生效，无锁竞争
                 try {
-                    state.scrollToItem(targetIndex)
+                    state.dispatchRawDelta(delta)
                 } catch (c: CancellationException) {
                     throw c  // 协程取消必须传播，不能吞
                 } catch (e: Exception) {
