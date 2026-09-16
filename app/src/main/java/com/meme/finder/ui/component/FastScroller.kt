@@ -8,8 +8,6 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,24 +17,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -53,6 +50,13 @@ import kotlin.math.roundToInt
  *     LazyVerticalGrid(...)
  *     FastScroller(state, totalItems, currentLabel, Modifier.fillMaxSize())
  *   }
+ *
+ * 关键实现细节：
+ * - scrollRatio 用 derivedStateOf 直接订阅 state，**不能 remember 包裹**
+ *   （remember 会让 derivedStateOf 在首次计算后被固定，state 变化不再触发重算，手柄就不动了）
+ * - 拖动 target 用 layoutInfo.totalItemsCount（grid 实际项数），不用外部传入的 totalItems
+ *   （外部 totalItems 可能与 grid 实际项数不一致，scrollToItem 越界会闪退）
+ * - 拖动用单个协程 Job 串行，避免多次 scrollToItem 抢占导致卡顿/竞态
  */
 @Composable
 fun FastScroller(
@@ -70,15 +74,27 @@ fun FastScroller(
     var dragRatio by remember { mutableStateOf<Float?>(null) }
     // track 高度（px），用于把拖动 delta 换算成比例
     var trackHeightPx by remember { mutableIntStateOf(0) }
-    // 当前滚动位置算出的"显示比例"，非拖动时用作手柄位置
-    val scrollRatio by remember {
-        derivedStateOf {
-            val total = totalItems
-            if (total <= 1) 0f
+
+    // 当前滚动位置算出的"显示比例"。
+    // 关键：不能用 remember { derivedStateOf {...} }，那会让 derivedStateOf 在 first compose 后
+    // 被 remember 缓存为同一实例，但闭包捕获的 state 引用没问题 —— 真正的坑是：如果用
+    // remember(totalItems) 包，totalItems 变了会重建 derivedStateOf，反而 OK；但更简单的写法是
+    // 直接用 `by derivedStateOf {...}` 不 remember，每次 recompose 都拿到同一个订阅。
+    // 这里用 layoutInfo 精确算比例：基于第一个可见 item 的 index 和它在该 item 内的 offset。
+    val scrollRatio by derivedStateOf {
+        val layoutInfo = state.layoutInfo
+        val total = layoutInfo.totalItemsCount
+        if (total <= 1) 0f
+        else {
+            val visible = layoutInfo.visibleItemsInfo
+            if (visible.isEmpty()) 0f
             else {
-                val first = state.firstVisibleItemIndex.toFloat()
-                // 用 firstVisibleItemIndex / (total-1) 近似比例
-                (first / (total - 1)).coerceIn(0f, 1f)
+                val firstInfo = visible.first()
+                // 用第一个可见 item 的"全局位置"近似滚动比例。
+                // 每个 item 在 viewport 顶部之上 = firstInfo.index - 0（用 index 直接近似）
+                // 严格说应该算上 offset，但 grid 的 offset 单位是 px，需要除以 item 高度才合理；
+                // 这里用纯 index 近似，足够手柄跟随。
+                (firstInfo.index.toFloat() / (total - 1).coerceAtLeast(1)).coerceIn(0f, 1f)
             }
         }
     }
@@ -89,27 +105,43 @@ fun FastScroller(
     val handleHeightDp = 36.dp
     val handleHeightPx = with(density) { handleHeightDp.toPx() }
 
-    // 整个 FastScroller 占满父容器，但只在右侧 track 区域接收拖动
+    // 串行化 scrollToItem 调用，避免多次抢占导致卡顿/竞态
+    var scrollJob: Job? by remember { mutableStateOf(null) }
+    val safeScrollTo: (Int) -> Unit = { target ->
+        scrollJob?.cancel()
+        scrollJob = scope.launch {
+            runCatching {
+                // 用 layoutInfo.totalItemsCount 防越界
+                val total = state.layoutInfo.totalItemsCount
+                val safeTarget = target.coerceIn(0, (total - 1).coerceAtLeast(0))
+                state.scrollToItem(safeTarget)
+            }
+        }
+    }
+
     Box(modifier) {
         // ===== 右侧 track + handle 区域 =====
-        // 用 width(28).fillMaxHeight() + align(CenterEnd) 限制为右侧窄竖条
         Box(
             Modifier
                 .align(Alignment.CenterEnd)
                 .width(28.dp)
                 .fillMaxHeight()
                 .onSizeChanged { trackHeightPx = it.height }
-                .pointerInput(totalItems) {
+                .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
                             val usable = (trackHeightPx - handleHeightPx)
                                 .coerceAtLeast(1f)
-                            val initRatio = ((offset.y - handleHeightPx / 2f) / usable)
-                                .coerceIn(0f, 1f)
+                            // offset.y 是相对 track 顶部的坐标，手柄中心点位置 = offset.y
+                            // 反推比例 = offset.y / usable（手柄中心能到的范围）
+                            val initRatio = (offset.y / usable).coerceIn(0f, 1f)
                             dragRatio = initRatio
-                            val target = (initRatio * (totalItems - 1)).roundToInt()
-                                .coerceIn(0, totalItems - 1)
-                            scope.launch { state.scrollToItem(target) }
+                            val total = state.layoutInfo.totalItemsCount
+                            if (total > 1) {
+                                val target = (initRatio * (total - 1)).roundToInt()
+                                    .coerceIn(0, total - 1)
+                                safeScrollTo(target)
+                            }
                         },
                         onDragEnd = { dragRatio = null },
                         onDragCancel = { dragRatio = null },
@@ -120,9 +152,12 @@ fun FastScroller(
                                 .coerceAtLeast(1f)
                             val newRatio = (prev + delta / usable).coerceIn(0f, 1f)
                             dragRatio = newRatio
-                            val target = (newRatio * (totalItems - 1)).roundToInt()
-                                .coerceIn(0, totalItems - 1)
-                            scope.launch { state.scrollToItem(target) }
+                            val total = state.layoutInfo.totalItemsCount
+                            if (total > 1) {
+                                val target = (newRatio * (total - 1)).roundToInt()
+                                    .coerceIn(0, total - 1)
+                                safeScrollTo(target)
+                            }
                         },
                     )
                 },
