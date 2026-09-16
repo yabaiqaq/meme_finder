@@ -16,8 +16,8 @@ android {
         applicationId = "com.meme.finder"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.1.3"
+        versionCode = 6
+        versionName = "0.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
