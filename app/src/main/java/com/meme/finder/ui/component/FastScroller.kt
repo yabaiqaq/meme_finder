@@ -8,7 +8,6 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,44 +18,61 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * 右侧快速滚动条：
- * - 整个组件 fillMaxSize 叠加在 grid 之上，但只有右侧 28dp 宽的 track 区域接收拖动手势
- *   （中间浮层区域不接收 pointerInput，手势透传给下层 grid，所以 grid 自身的滚动也不受影响）
- * - 拖动时 grid 滚到对应位置（按 entry index 比例换算）
- * - 拖动时居中浮层显示 [currentLabel]（例如当前年月）
- * - 非拖动状态下手柄位置跟随 [state] 实时滚动
+ * 右侧快速滚动条（适配 [LazyVerticalGrid]）。
  *
- * 用法（父容器是 Box）：
+ * 用法（父容器是 Box，FastScroller 叠加在 grid 之上）：
  *   Box {
  *     LazyVerticalGrid(...)
  *     FastScroller(state, totalItems, currentLabel, Modifier.fillMaxSize())
  *   }
  *
- * 关键实现细节：
- * - scrollRatio 用 derivedStateOf 直接订阅 state，**不能 remember 包裹**
- *   （remember 会让 derivedStateOf 在首次计算后被固定，state 变化不再触发重算，手柄就不动了）
- * - 拖动 target 用 layoutInfo.totalItemsCount（grid 实际项数），不用外部传入的 totalItems
- *   （外部 totalItems 可能与 grid 实际项数不一致，scrollToItem 越界会闪退）
- * - 拖动用单个协程 Job 串行，避免多次 scrollToItem 抢占导致卡顿/竞态
+ * 关键实现要点（参考社区 DragDrop / ComposeReorderable 模式）：
+ *
+ * 1. **handle 位移**用 [Modifier.graphicsLayer] 的 `translationY` + lambda deferred read，
+ *    内部**直接读 State**（dragRatio / scrollRatio / trackHeightPx），不用中间普通变量。
+ *    原因：graphicsLayer 的 block 是 deferred read，layer 只在 block 内的 State read 变化时
+ *    invalidate。如果 block 内读的是普通 val（如 `handleRatio`），即使该 val 在 recomposition
+ *    时被重新计算并传入新 block，layer **不会因为 block 实例变化而 invalidate**——
+ *    translationY 永远不更新。必须让 block 直接读 State，layer 才能订阅并刷新。
+ *
+ * 2. **drag → scroll 派发**：`detectVerticalDragGestures` 的 `onVerticalDrag` 回调
+ *    只更新本地 `mutableFloatStateOf` 的 dragRatio，**不直接调用 suspend 的 scrollToItem**。
+ *    真正的 `state.scrollToItem(targetIndex)` 派发到 `rememberCoroutineScope().launch { ... }`，
+ *    Job 引用存到普通对象 holder（不用 mutableStateOf，避免触发 recomposition），
+ *    新的 drag 来时 cancel 上一次未完成的 scroll，`onDragEnd`/`onDragCancel` 显式 cancel Job。
+ *
+ * 3. **不捕获 CancellationException**：用 try-catch 显式 rethrow CancellationException。
+ *    runCatching 会把 CancellationException 当普通异常吞掉，导致 Job 进入 Completed 而非
+ *    Cancelled 状态，破坏结构化并发——scope 取消时子 Job 泄漏，快速拖动场景下表现为卡死后闪退。
+ *
+ * 4. **isDragging 用 derivedStateOf 过滤**：`derivedStateOf { dragRatio >= 0f }`
+ *    只在拖动开始/结束（true↔false 边界）触发 recomposition；拖动过程中 dragRatio 在 0..1
+ *    高频变化时 isDragging 不变，不触发 recomposition，避免重组风暴。
+ *
+ * 5. **triggerScroll 用 remember 稳定**：避免每次重组创建新 lambda 实例。
+ *
+ * 6. **防 IndexOutOfBounds**：派发前 `targetIndex.coerceIn(0, (totalItemsCount - 1).coerceAtLeast(0))`；
+ *    layoutInfo 在 dispatch 与 suspend resume 之间可能已变，try-catch 兜底。
  */
 @Composable
 fun FastScroller(
@@ -70,51 +86,46 @@ fun FastScroller(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    // 拖动时的实时比例（0..1），null 表示未在拖动
-    var dragRatio by remember { mutableStateOf<Float?>(null) }
-    // track 高度（px），用于把拖动 delta 换算成比例
+    // 拖动时的实时比例（0..1），-1f 表示未在拖动
+    var dragRatio by remember { mutableFloatStateOf(-1f) }
+    // track 高度（px）
     var trackHeightPx by remember { mutableIntStateOf(0) }
-
-    // 当前滚动位置算出的"显示比例"。
-    // 关键：不能用 remember { derivedStateOf {...} }，那会让 derivedStateOf 在 first compose 后
-    // 被 remember 缓存为同一实例，但闭包捕获的 state 引用没问题 —— 真正的坑是：如果用
-    // remember(totalItems) 包，totalItems 变了会重建 derivedStateOf，反而 OK；但更简单的写法是
-    // 直接用 `by derivedStateOf {...}` 不 remember，每次 recompose 都拿到同一个订阅。
-    // 这里用 layoutInfo 精确算比例：基于第一个可见 item 的 index 和它在该 item 内的 offset。
-    val scrollRatio by derivedStateOf {
-        val layoutInfo = state.layoutInfo
-        val total = layoutInfo.totalItemsCount
-        if (total <= 1) 0f
-        else {
-            val visible = layoutInfo.visibleItemsInfo
-            if (visible.isEmpty()) 0f
-            else {
-                val firstInfo = visible.first()
-                // 用第一个可见 item 的"全局位置"近似滚动比例。
-                // 每个 item 在 viewport 顶部之上 = firstInfo.index - 0（用 index 直接近似）
-                // 严格说应该算上 offset，但 grid 的 offset 单位是 px，需要除以 item 高度才合理；
-                // 这里用纯 index 近似，足够手柄跟随。
-                (firstInfo.index.toFloat() / (total - 1).coerceAtLeast(1)).coerceIn(0f, 1f)
-            }
-        }
-    }
-    val handleRatio = dragRatio ?: scrollRatio
-    val active = dragRatio != null
-    val label = if (active) currentLabel() else null
 
     val handleHeightDp = 36.dp
     val handleHeightPx = with(density) { handleHeightDp.toPx() }
 
-    // 串行化 scrollToItem 调用，避免多次抢占导致卡顿/竞态
-    var scrollJob: Job? by remember { mutableStateOf(null) }
-    val safeScrollTo: (Int) -> Unit = { target ->
-        scrollJob?.cancel()
-        scrollJob = scope.launch {
-            runCatching {
-                // 用 layoutInfo.totalItemsCount 防越界
-                val total = state.layoutInfo.totalItemsCount
-                val safeTarget = target.coerceIn(0, (total - 1).coerceAtLeast(0))
-                state.scrollToItem(safeTarget)
+    // 非拖动时手柄位置：订阅 LazyGridState 的 firstVisibleItemIndex / totalItemsCount
+    val scrollRatio by remember {
+        derivedStateOf {
+            val total = state.layoutInfo.totalItemsCount
+            if (total <= 1) 0f
+            else (state.firstVisibleItemIndex.toFloat() / (total - 1)).coerceIn(0f, 1f)
+        }
+    }
+
+    // isDragging 只在边界变化触发 recomposition，拖动中 dragRatio 高频变化时不重组
+    val isDragging by remember { derivedStateOf { dragRatio >= 0f } }
+    val label = if (isDragging) currentLabel() else null
+
+    // Job 用普通对象持有：不驱动 UI，不需要 mutableStateOf（mutableStateOf 会在 cancel/launch 时
+    // 触发 recomposition，快速拖动场景下导致重组风暴 → ANR）
+    val scrollJobHolder = remember { object { var job: Job? = null } }
+
+    val triggerScroll: (Float) -> Unit = remember(state, scope, scrollJobHolder) {
+        { ratio: Float ->
+            scrollJobHolder.job?.cancel()
+            scrollJobHolder.job = scope.launch {
+                try {
+                    val total = state.layoutInfo.totalItemsCount
+                    if (total > 1) {
+                        val target = (ratio * (total - 1)).roundToInt().coerceIn(0, total - 1)
+                        state.scrollToItem(target)
+                    }
+                } catch (c: CancellationException) {
+                    throw c  // 协程取消必须传播，不能吞
+                } catch (e: Exception) {
+                    // IndexOutOfBounds 等兜底，layoutInfo 在 suspend resume 之间可能已变
+                }
             }
         }
     }
@@ -130,34 +141,28 @@ fun FastScroller(
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
-                            val usable = (trackHeightPx - handleHeightPx)
-                                .coerceAtLeast(1f)
-                            // offset.y 是相对 track 顶部的坐标，手柄中心点位置 = offset.y
-                            // 反推比例 = offset.y / usable（手柄中心能到的范围）
+                            val usable = (trackHeightPx - handleHeightPx).coerceAtLeast(1f)
                             val initRatio = (offset.y / usable).coerceIn(0f, 1f)
                             dragRatio = initRatio
-                            val total = state.layoutInfo.totalItemsCount
-                            if (total > 1) {
-                                val target = (initRatio * (total - 1)).roundToInt()
-                                    .coerceIn(0, total - 1)
-                                safeScrollTo(target)
-                            }
+                            triggerScroll(initRatio)
                         },
-                        onDragEnd = { dragRatio = null },
-                        onDragCancel = { dragRatio = null },
+                        onDragEnd = {
+                            dragRatio = -1f
+                            scrollJobHolder.job?.cancel()
+                            scrollJobHolder.job = null
+                        },
+                        onDragCancel = {
+                            dragRatio = -1f
+                            scrollJobHolder.job?.cancel()
+                            scrollJobHolder.job = null
+                        },
                         onVerticalDrag = { change, delta ->
                             change.consume()
-                            val prev = dragRatio ?: 0f
-                            val usable = (trackHeightPx - handleHeightPx)
-                                .coerceAtLeast(1f)
+                            val prev = if (dragRatio >= 0f) dragRatio else 0f
+                            val usable = (trackHeightPx - handleHeightPx).coerceAtLeast(1f)
                             val newRatio = (prev + delta / usable).coerceIn(0f, 1f)
                             dragRatio = newRatio
-                            val total = state.layoutInfo.totalItemsCount
-                            if (total > 1) {
-                                val target = (newRatio * (total - 1)).roundToInt()
-                                    .coerceIn(0, total - 1)
-                                safeScrollTo(target)
-                            }
+                            triggerScroll(newRatio)
                         },
                     )
                 },
@@ -171,33 +176,37 @@ fun FastScroller(
                     .padding(vertical = handleHeightDp / 2 + 4.dp)
                     .background(
                         color = MaterialTheme.colorScheme.outline.copy(
-                            alpha = if (active) 0.8f else 0.4f
+                            alpha = if (isDragging) 0.8f else 0.4f
                         ),
                         shape = RoundedCornerShape(50),
                     ),
             )
 
-            // 拖动手柄（顶端对齐 + 按 ratio 偏移）
-            val usablePx = (trackHeightPx - handleHeightPx).coerceAtLeast(0f)
-            val topOffsetPx = (handleRatio * usablePx).coerceIn(0f, usablePx)
+            // 拖动手柄：graphicsLayer block 内直接读 State（dragRatio/scrollRatio/trackHeightPx），
+            // layer 订阅这些 State，任一变化触发 invalidate → translationY 实时刷新
             Box(
                 Modifier
                     .align(Alignment.TopEnd)
                     .padding(end = 4.dp)
                     .size(width = 14.dp, height = handleHeightDp)
-                    .alpha(if (active) 1f else 0.6f)
+                    .alpha(if (isDragging) 1f else 0.6f)
                     .background(
-                        color = if (active) MaterialTheme.colorScheme.primary
+                        color = if (isDragging) MaterialTheme.colorScheme.primary
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                         shape = RoundedCornerShape(50),
                     )
-                    .offset { IntOffset(0, topOffsetPx.roundToInt()) },
+                    .graphicsLayer {
+                        // 关键：直接读 State，不要提取到中间普通变量
+                        val ratio = if (dragRatio >= 0f) dragRatio else scrollRatio
+                        val usable = (trackHeightPx - handleHeightPx).coerceAtLeast(0f)
+                        translationY = (ratio * usable).coerceIn(0f, usable)
+                    },
             )
         }
 
-        // ===== 中间浮层（仅在拖动时显示，不接收 pointerInput，手势透传给下层 grid） =====
+        // ===== 中间浮层（仅在拖动时显示，不接收 pointerInput） =====
         AnimatedVisibility(
-            visible = active && !label.isNullOrBlank(),
+            visible = isDragging && !label.isNullOrBlank(),
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
