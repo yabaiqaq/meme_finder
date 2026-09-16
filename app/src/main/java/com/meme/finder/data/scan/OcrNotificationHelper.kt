@@ -5,8 +5,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.work.ForegroundInfo
 import com.meme.finder.R
 import com.meme.finder.ui.MainActivity
 
@@ -80,5 +82,17 @@ object OcrNotificationHelper {
             .setOngoing(true)  // 常驻，用户不能手动清除
             .setOnlyAlertOnce(true)  // 只在首次显示时提醒
             .build()
+    }
+
+    /**
+     * 构建 ForegroundInfo，包含通知和前台服务类型。
+     * Android 14+ 要求显式指定 foregroundServiceType。
+     */
+    fun buildForegroundInfo(context: Context, done: Int, total: Int): ForegroundInfo {
+        val notification = buildNotification(context, done, total)
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        } else 0
+        return ForegroundInfo(NOTIFICATION_ID, notification, type)
     }
 }
