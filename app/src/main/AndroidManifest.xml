@@ -56,5 +56,12 @@
             </intent-filter>
         </activity>
 
+        <!-- WorkManager 前台服务：覆盖库默认声明，添加 foregroundServiceType 以兼容 Android 14+ -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            tools:node="replace" />
+
     </application>
 </manifest>
