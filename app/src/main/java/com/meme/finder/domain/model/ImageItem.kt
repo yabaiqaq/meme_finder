@@ -17,12 +17,6 @@ data class ImageItem(
     val bucketDisplayName: String?,  // 相册分组名
     val type: ImageType = ImageType.UNKNOWN,
     val ocrText: String? = null,      // OCR 提取到的全部文字（拼接）
-    val labels: List<String> = emptyList(),  // 图片标签
     val isFavorite: Boolean = false,
     val ocrProcessedAt: Long = 0L,
-    val labelProcessedAt: Long = 0L,
-) {
-    /** 判断是否"已处理"，用于扫描时跳过。 */
-    val isFullyProcessed: Boolean
-        get() = ocrProcessedAt > 0L && labelProcessedAt > 0L
-}
+)

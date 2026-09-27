@@ -208,33 +208,6 @@ private fun Content(item: ImageItem) {
             }
         }
 
-        // 标签卡片
-        if (item.labels.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            ) {
-                Column(
-                    Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("标签", style = MaterialTheme.typography.titleMedium)
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        item.labels.take(6).forEach { label ->
-                            LabelChip(label)
-                        }
-                    }
-                }
-            }
-        }
-
         Spacer(Modifier.height(8.dp))
 
         if (expanded) {
@@ -265,22 +238,6 @@ private fun InfoRow(label: String, value: String) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 200.dp),
-        )
-    }
-}
-
-@Composable
-private fun LabelChip(label: String) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Text(
-            "#$label",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

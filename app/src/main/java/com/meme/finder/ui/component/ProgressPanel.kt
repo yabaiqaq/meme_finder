@@ -25,7 +25,7 @@ import com.meme.finder.data.progress.OverallProgress
 import com.meme.finder.data.progress.TaskProgress
 
 /**
- * 进度面板：任一任务在跑就展开为一张卡片，内部显示扫描/OCR/标签的进度条。
+ * 进度面板：任一任务在跑就展开为一张卡片，内部显示扫描/OCR 的进度条。
  * 卡片样式与 DetailScreen/SettingsScreen 的 Card 保持一致（20dp 圆角、0 elevation、surface 底色）。
  */
 @Composable
@@ -53,7 +53,6 @@ fun ProgressPanel(progress: OverallProgress) {
             ) {
                 if (progress.scan.isRunning) ProgressRow("扫描相册", progress.scan)
                 if (progress.ocr.isRunning)  ProgressRow("OCR 识别", progress.ocr)
-                if (progress.label.isRunning) ProgressRow("标签识别", progress.label)
             }
         }
     }

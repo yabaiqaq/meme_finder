@@ -83,7 +83,7 @@ class SettingsViewModel @Inject constructor(
         cloudStore.save(_local.value.cloud)
     }
 
-    /** 同步扫描：直接调 repo.rescan()，等写完库 UI 即刷新，再触发 OCR+标签。 */
+    /** 同步扫描：直接调 repo.rescan()，等写完库 UI 即刷新，再触发 OCR。 */
     fun rescan() {
         if (_local.value.isScanning) return
         _local.update { it.copy(isScanning = true) }
@@ -97,7 +97,7 @@ class SettingsViewModel @Inject constructor(
             }
                 .onSuccess {
                     _local.update { it.copy(isScanning = false) }
-                    scanStarter.startOcrAndLabels()
+                    scanStarter.startOcrOnly()
                 }
                 .onFailure {
                     _local.update { it.copy(isScanning = false) }
@@ -108,10 +108,6 @@ class SettingsViewModel @Inject constructor(
 
     fun forceOcr() {
         scanStarter.startOcrOnly()
-    }
-
-    fun forceLabel() {
-        scanStarter.startLabelOnly()
     }
 
     private data class LocalState(

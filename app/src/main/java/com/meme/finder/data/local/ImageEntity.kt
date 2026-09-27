@@ -21,7 +21,9 @@ data class ImageEntity(
     @ColumnInfo(name = "bucket_display_name") val bucketDisplayName: String?,
     @ColumnInfo(name = "type") val type: ImageType,
     @ColumnInfo(name = "ocr_text") val ocrText: String?,
-    @ColumnInfo(name = "labels") val labels: List<String>,
+    // 已废弃的图片标签列：保留是为了不改动 Room schema（版本仍为 1），
+    // 否则 fallbackToDestructiveMigration 会清掉用户已跑完的 OCR 数据。
+    @ColumnInfo(name = "labels") val labels: List<String> = emptyList(),
     @ColumnInfo(name = "is_favorite") val isFavorite: Boolean = false,
     @ColumnInfo(name = "ocr_processed_at") val ocrProcessedAt: Long = 0L,
     @ColumnInfo(name = "label_processed_at") val labelProcessedAt: Long = 0L,
@@ -41,10 +43,8 @@ data class ImageEntity(
         bucketDisplayName = bucketDisplayName,
         type = type,
         ocrText = ocrText,
-        labels = labels,
         isFavorite = isFavorite,
         ocrProcessedAt = ocrProcessedAt,
-        labelProcessedAt = labelProcessedAt,
     )
 
     companion object {
@@ -62,10 +62,8 @@ data class ImageEntity(
             bucketDisplayName = item.bucketDisplayName,
             type = item.type,
             ocrText = item.ocrText,
-            labels = item.labels,
             isFavorite = item.isFavorite,
             ocrProcessedAt = item.ocrProcessedAt,
-            labelProcessedAt = item.labelProcessedAt,
         )
     }
 }

@@ -102,7 +102,7 @@ class MediaStoreSource @Inject constructor(
 
 /**
  * 基于尺寸/比例/文件名的启发式分类器。
- * 真正"表情包"难以绝对区分，这里给一个合理的初判，后续用 OCR + 标签细化。
+ * 真正"表情包"难以绝对区分，这里给一个合理的初判。
  */
 @Singleton
 class ImageTypeClassifier @Inject constructor() {

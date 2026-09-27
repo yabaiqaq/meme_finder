@@ -7,7 +7,6 @@
 - 架构：MVVM + Clean Architecture + 单 module
 - 数据库：Room (FTS 全文搜索)
 - OCR：端侧 ML Kit (中英文) + 云端增强（可插拔）
-- 图片标签：ML Kit Image Labeling
 - 后台任务：WorkManager
 - 依赖注入：Hilt
 - 图片加载：Coil
@@ -16,7 +15,7 @@
 - v0.1 相册扫描 + UI 骨架（MediaStore + Jetpack Compose + Hilt 导航）
 - v0.2 端侧 OCR + Room 数据库 + WorkManager 后台扫描
 - v0.3 搜索（FTS4 全文索引）+ 详情页
-- v0.4 图片标签识别（ML Kit Image Labeling）+ 智能二次分类
+- v0.4 图片分类启发式（按尺寸/比例/文件名初判表情包含义）
 - v0.5 收藏切换 + 系统分享（FileProvider 临时文件）
 - v0.6 云端 OCR 增强（混合策略：端侧 ML Kit 优先 + 百度云端兜底）
 

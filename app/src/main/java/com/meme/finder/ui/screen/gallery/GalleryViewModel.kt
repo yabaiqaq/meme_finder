@@ -73,8 +73,8 @@ class GalleryViewModel @Inject constructor(
                     _local.update {
                         it.copy(isScanning = false, hasScanned = true, lastScanCount = count)
                     }
-                    // 扫描完成 -> 后台跑 OCR + 标签（增量，只处理 ocr_processed_at=0 的）
-                    scanStarter.startOcrAndLabels()
+                    // 扫描完成 -> 后台跑 OCR（增量，只处理 ocr_processed_at=0 的）
+                    scanStarter.startOcrOnly()
                 }
                 .onFailure { e ->
                     _local.update { it.copy(isScanning = false, error = e.message ?: "扫描失败") }

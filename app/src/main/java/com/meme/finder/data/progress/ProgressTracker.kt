@@ -24,9 +24,8 @@ data class TaskProgress(
 data class OverallProgress(
     val scan: TaskProgress = TaskProgress(),
     val ocr: TaskProgress = TaskProgress(),
-    val label: TaskProgress = TaskProgress(),
 ) {
-    val anyRunning: Boolean get() = scan.isRunning || ocr.isRunning || label.isRunning
+    val anyRunning: Boolean get() = scan.isRunning || ocr.isRunning
 }
 
 /**
@@ -46,11 +45,6 @@ class ProgressTracker @Inject constructor() {
         _overall.update { it.copy(ocr = p) }
     }
 
-    fun setLabelProgress(p: TaskProgress) {
-        _overall.update { it.copy(label = p) }
-    }
-
     fun resetScan() { _overall.update { it.copy(scan = TaskProgress()) } }
     fun resetOcr()  { _overall.update { it.copy(ocr = TaskProgress()) } }
-    fun resetLabel(){ _overall.update { it.copy(label = TaskProgress()) } }
 }

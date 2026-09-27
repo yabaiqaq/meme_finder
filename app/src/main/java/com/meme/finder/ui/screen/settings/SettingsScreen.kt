@@ -96,13 +96,6 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 Text("补跑 OCR")
             }
         }
-        OutlinedButton(
-            onClick = vm::forceLabel,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-        ) {
-            Text("补跑标签")
-        }
 
         // 云端 OCR
         Card(
