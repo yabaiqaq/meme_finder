@@ -5,6 +5,8 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import dagger.hilt.android.HiltAndroidApp
@@ -28,6 +30,10 @@ class MemeApp : Application(), Configuration.Provider, ImageLoaderFactory {
      * - 磁盘缓存 500MB，滚动反复回到的图片不重新解码
      * - crossfade 过渡更平滑
      * Coil 默认会按 AsyncImage 的目标 size downsample，不再解码原图
+     *
+     * GIF：Coil 2 的默认解码器不含动图解码器（它们在 coil-gif 里），必须手动注册，
+     * 否则 GIF 只显示首帧。ImageDecoderDecoder 内部自带 API 28 判断，
+     * 26/27 会落到 GifDecoder（MovieDrawable）。
      */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .crossfade(true)
@@ -40,6 +46,10 @@ class MemeApp : Application(), Configuration.Provider, ImageLoaderFactory {
             DiskCache.Builder()
                 .maxSizeBytes(500L * 1024 * 1024)
                 .build()
+        }
+        .components {
+            add(ImageDecoderDecoder.Factory())
+            add(GifDecoder.Factory())
         }
         .build()
 }

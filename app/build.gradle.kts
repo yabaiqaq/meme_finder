@@ -94,6 +94,7 @@ dependencies {
     ksp(libs.hilt.work.compiler)
 
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
 
     implementation(libs.androidx.work.runtime)
 
