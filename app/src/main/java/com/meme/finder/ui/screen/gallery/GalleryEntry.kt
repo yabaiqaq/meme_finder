@@ -11,9 +11,11 @@ import java.util.Calendar
  * 分组依据：dateTakenMs（拍摄时间，更符合用户对"年月"的直觉）；
  * 如果 dateTakenMs 为空（无 EXIF），fallback 到 dateAddedSec*1000。
  *
- * 列表顺序保持 DAO 返回顺序，不重新排序 —— 避免与排序键不一致导致跨月跳来跳去
- * 在视觉上不自然。如果 DAO 排序是 date_added_sec DESC，那么 dateTakenMs 的月份
- * 也大致递减（同月内），偶尔跨月跳是 EXIF 与添加时间不一致导致的，无法在分组层解决。
+ * 必须先按分组键本身排序再分段：DAO 的排序键是 date_added_sec（入库时间），
+ * 与分组键 dateTakenMs（拍摄时间）不一致时同一月份会被切成多段，产生重复的
+ * "header_年_月" key，LazyGrid 测量到后一段会直接抛
+ * IllegalArgumentException: Key was already used 闪退。
+ * 排序后月份必然连续，同月图片归入一段，key 唯一。
  */
 @Immutable
 sealed class GalleryEntry {
@@ -37,8 +39,8 @@ sealed class GalleryEntry {
 }
 
 /**
- * 把扁平图片列表按"年月"分组：返回 [(月分头, 月内图片)] 列表。
- * 列表内每个 Group 保持原顺序，组之间顺序与原列表一致（DAO 默认按 date_added_sec DESC）。
+ * 把图片列表按"年月"分组：返回 [(月分头, 月内图片)] 列表。
+ * 组之间按拍摄时间递减，组内同样按拍摄时间递减。
  */
 @Immutable
 data class GalleryGroup(
@@ -46,15 +48,18 @@ data class GalleryGroup(
     val items: List<ImageItem>,
 )
 
+private fun galleryTimestampOf(item: ImageItem): Long =
+    item.dateTakenMs ?: (item.dateAddedSec * 1000L)
+
 fun groupByMonth(items: List<ImageItem>): List<GalleryGroup> {
     if (items.isEmpty()) return emptyList()
-    val result = ArrayList<GalleryGroup>(items.size / 50 + 1)
+    val sorted = items.sortedByDescending(::galleryTimestampOf)
+    val result = ArrayList<GalleryGroup>(sorted.size / 50 + 1)
     var currentHeader: GalleryEntry.Header? = null
     var currentBucket: ArrayList<ImageItem>? = null
     val cal = Calendar.getInstance()
-    for (item in items) {
-        val ts = item.dateTakenMs ?: (item.dateAddedSec * 1000L)
-        cal.timeInMillis = ts
+    for (item in sorted) {
+        cal.timeInMillis = galleryTimestampOf(item)
         val year = cal.get(Calendar.YEAR)
         val month = cal.get(Calendar.MONTH) + 1  // Calendar.MONTH 是 0-based
         if (currentHeader?.year != year || currentHeader?.month != month) {
