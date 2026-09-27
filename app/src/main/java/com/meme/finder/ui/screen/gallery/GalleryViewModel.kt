@@ -8,6 +8,8 @@ import com.meme.finder.data.progress.TaskProgress
 import com.meme.finder.data.repo.ImageRepository
 import com.meme.finder.data.scan.ScanStarter
 import com.meme.finder.domain.model.ImageItem
+import com.meme.finder.ui.component.MonthGroup
+import com.meme.finder.ui.component.groupByMonth
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,7 +23,7 @@ import javax.inject.Inject
 data class GalleryUiState(
     val isLoading: Boolean = false,
     val images: List<ImageItem> = emptyList(),
-    val groups: List<GalleryGroup> = emptyList(),
+    val groups: List<MonthGroup> = emptyList(),
     val total: Int = 0,
     val error: String? = null,
     val hasScanned: Boolean = false,

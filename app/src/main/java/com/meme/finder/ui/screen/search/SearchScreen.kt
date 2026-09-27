@@ -1,17 +1,11 @@
 package com.meme.finder.ui.screen.search
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -25,6 +19,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,8 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meme.finder.R
-import com.meme.finder.domain.model.ImageItem
-import com.meme.finder.ui.component.ImageGridCell
+import com.meme.finder.ui.component.GroupedImageGrid
+import com.meme.finder.ui.component.groupByMonth
 
 @Composable
 fun SearchScreen(
@@ -102,7 +97,10 @@ fun SearchScreen(
         when {
             query.isBlank() -> EmptyHint("输入关键词开始搜索")
             results.isEmpty() -> EmptyHint(stringResource(R.string.empty_search))
-            else -> ResultGrid(results, onOpenImage)
+            else -> GroupedImageGrid(
+                groups = remember(results) { groupByMonth(results) },
+                onOpenImage = onOpenImage,
+            )
         }
     }
 }
@@ -116,20 +114,5 @@ private fun EmptyHint(text: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
-    }
-}
-
-@Composable
-private fun ResultGrid(items: List<ImageItem>, onOpenImage: (Long) -> Unit) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(120.dp),
-        contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(items, key = { it.id }) { item ->
-            ImageGridCell(item = item, onClick = onOpenImage)
-        }
     }
 }
